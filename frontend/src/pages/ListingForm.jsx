@@ -3,23 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '../api/client';
 
 const empty = { title: '', category: '', condition: '', description: '', pickupArea: '', pickupAddress: '', pickupTime: '', imageUrl: '' };
-const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-
-function readImage(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('Could not read that image. Please choose it again.'));
-    reader.readAsDataURL(file);
-  });
-}
 
 export default function ListingForm() {
   const { id } = useParams();
   const edit = Boolean(id);
   const [form, setForm] = useState(empty);
-  const [imageFile, setImageFile] = useState(null);
-  const [preview, setPreview] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
@@ -27,30 +15,12 @@ export default function ListingForm() {
   useEffect(() => {
     if (edit) api.get(`/listings/${id}`).then(({ data }) => setForm({ ...empty, ...data.data.listing })).catch(e => setError(e.message));
   }, [id, edit]);
-  useEffect(() => {
-    if (!imageFile) { setPreview(''); return undefined; }
-    const url = URL.createObjectURL(imageFile);
-    setPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [imageFile]);
-
   const change = (e) => setForm({ ...form, [e.target.name]: e.target.value });
-  const chooseImage = (e) => {
-    const file = e.target.files?.[0];
-    setError('');
-    if (!file) { setImageFile(null); return; }
-    if (!allowedTypes.includes(file.type)) { setError('Choose a JPG, PNG, or WebP photo.'); e.target.value = ''; return; }
-    if (file.size > 2 * 1024 * 1024) { setError('Photo must be 2 MB or smaller.'); e.target.value = ''; return; }
-    setImageFile(file);
-  };
 
   const submit = async (e) => {
     e.preventDefault(); setBusy(true); setError('');
     try {
-      const payload = { ...form };
-      delete payload.imageUrl;
-      if (imageFile) payload.imageData = await readImage(imageFile);
-      const { data } = await api[edit ? 'patch' : 'post'](edit ? `/listings/${id}` : '/listings', payload);
+      const { data } = await api[edit ? 'patch' : 'post'](edit ? `/listings/${id}` : '/listings', form);
       navigate(`/listings/${data.data.listing._id}`);
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
@@ -66,8 +36,8 @@ export default function ListingForm() {
       <label>Approximate pickup area<input name="pickupArea" value={form.pickupArea} onChange={change} required minLength="2" maxLength="120" placeholder="Neighborhood or nearby landmark"/></label>
       <label>Exact pickup address <span className="muted">(only shown to you and the person you accept)</span><input name="pickupAddress" value={form.pickupAddress} onChange={change} required minLength="5" maxLength="300" placeholder="Street, building, and any directions" autoComplete="street-address"/></label>
       <label>Pickup days and time <span className="muted">(for example, weekdays 5–7 PM)</span><input name="pickupTime" value={form.pickupTime} onChange={change} required minLength="3" maxLength="200" placeholder="When can the item be collected?"/></label>
-      <label>Item photo <span className="muted">(optional, JPG/PNG/WebP, up to 2 MB)</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseImage}/></label>
-      {(preview || form.imageUrl) && <img className="listing-photo-preview" src={preview || form.imageUrl} alt="Preview of the item"/>}
+      <label>Image URL <span className="muted">(optional)</span><input type="url" name="imageUrl" value={form.imageUrl || ''} onChange={change} placeholder="https://…"/></label>
+      {form.imageUrl && <img className="listing-photo-preview" src={form.imageUrl} alt="Preview of the item" onError={(e) => { e.currentTarget.style.display = 'none'; }} onLoad={(e) => { e.currentTarget.style.display = 'block'; }} />}
       <button className="button form-submit" disabled={busy}>{busy ? 'Saving…' : edit ? 'Save changes' : 'Share this item'}</button>
     </form>
   </main>;

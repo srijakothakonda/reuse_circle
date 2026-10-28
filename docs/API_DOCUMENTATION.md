@@ -1,6 +1,6 @@
 # API documentation
 
-All routes use the `/api` prefix and return `{ success, message, data }` on success. Errors return `{ success: false, message }`. Protected routes require the `reusecircle_token` HttpOnly cookie. IDs are MongoDB ObjectIds. JSON request bodies are limited to 3 MB so a JPG, PNG, or WebP photo up to 2 MB can be uploaded as a data URL.
+All routes use the `/api` prefix and return `{ success, message, data }` on success. Errors return `{ success: false, message }`. Protected routes require the `reusecircle_token` HttpOnly cookie. IDs are MongoDB ObjectIds. JSON request bodies are limited to 100 KB.
 
 ## Authentication
 
@@ -16,9 +16,8 @@ All routes use the `/api` prefix and return `{ success, message, data }` on succ
 | Method and path | Access | Body / query | Result |
 |---|---|---|---|
 | `GET /listings` | Public | `search`, `category`, `condition`, `status`, `page`, `limit` | Newest first, paginated `{items,pagination}` |
-| `POST /listings` | Login required | title, category, condition, description, pickupArea, pickupAddress, pickupTime, optional imageData | 201; listing |
+| `POST /listings` | Login required | title, category, condition, description, pickupArea, pickupAddress, pickupTime, optional http(s) imageUrl | 201; listing |
 | `GET /listings/:id` | Public; owner and accepted requester receive private pickup details | none | listing without populated private user data |
-| `GET /listings/:id/image` | Public | none | Stored image bytes |
 | `PATCH /listings/:id` | Owner | editable listing fields; status is not accepted | Updated available listing |
 | `DELETE /listings/:id` | Owner | none | Deletes available listing and dependent records |
 | `GET /me/listings` | Login required | none | Current user's listings |

@@ -20,21 +20,9 @@ const ownListing = async (req, res) => {
   return listing;
 };
 const cookieOptions = (config) => ({ httpOnly: true, secure: config.cookieSecure, sameSite: config.cookieSameSite, path: '/', maxAge: 7 * 24 * 60 * 60 * 1000 });
-const imageRule = body('imageData').optional({ values: 'falsy' }).matches(/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/).withMessage('Choose a JPG, PNG, or WebP image');
-function imageBuffer(dataUrl) {
-  if (!dataUrl) return null;
-  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);
-  if (!match) { const error = new Error('Choose a JPG, PNG, or WebP image'); error.status = 400; throw error; }
-  const data = Buffer.from(match[2], 'base64');
-  if (!data.length || data.length > 2 * 1024 * 1024) { const error = new Error('Image must be 2 MB or smaller'); error.status = 400; throw error; }
-  return { data, contentType: match[1] };
-}
 function safeListing(listing, req, includePrivate = false) {
   const value = listing.toObject ? listing.toObject() : { ...listing };
   if (!includePrivate) { delete value.pickupAddress; delete value.pickupTime; }
-  const hasUploadedImage = Boolean(value.imageContentType || value.imageData);
-  delete value.imageData; delete value.imageContentType;
-  if (hasUploadedImage) value.imageUrl = `${req.protocol}://${req.get('host')}/api/listings/${value._id}/image`;
   return value;
 }
 
@@ -76,33 +64,25 @@ export function createApi(config) {
     if (status) filter.status = status;
     if (search) { const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); filter.$or = [{ title: { $regex: escaped, $options: 'i' } }, { description: { $regex: escaped, $options: 'i' } }]; }
     const page = Number(req.query.page || 1); const limit = Number(req.query.limit || 12);
-    const [items, total] = await Promise.all([Listing.find(filter).select('-__v +imageContentType').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean(), Listing.countDocuments(filter)]);
+    const [items, total] = await Promise.all([Listing.find(filter).select('-__v').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean(), Listing.countDocuments(filter)]);
     ok(res, { items: items.map(item => safeListing(item, req)), pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
   }));
-  router.post('/listings', auth, [body('title').trim().isLength({ min: 2, max: 120 }), body('category').isIn(CATEGORIES), body('condition').isIn(CONDITIONS), body('description').trim().isLength({ min: 10, max: 2000 }), body('pickupArea').trim().isLength({ min: 2, max: 120 }), body('pickupAddress').trim().isLength({ min: 5, max: 300 }), body('pickupTime').trim().isLength({ min: 3, max: 200 }), imageRule, validate], asyncRoute(async (req, res) => {
-    const image = imageBuffer(req.body.imageData);
-    const listing = await Listing.create({ ownerId: req.user._id, title: req.body.title, category: req.body.category, condition: req.body.condition, description: req.body.description, pickupArea: req.body.pickupArea, pickupAddress: req.body.pickupAddress, pickupTime: req.body.pickupTime, imageData: image?.data, imageContentType: image?.contentType });
+  router.post('/listings', auth, [body('title').trim().isLength({ min: 2, max: 120 }), body('category').isIn(CATEGORIES), body('condition').isIn(CONDITIONS), body('description').trim().isLength({ min: 10, max: 2000 }), body('pickupArea').trim().isLength({ min: 2, max: 120 }), body('pickupAddress').trim().isLength({ min: 5, max: 300 }), body('pickupTime').trim().isLength({ min: 3, max: 200 }), body('imageUrl').optional({ values: 'falsy' }).isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('Image URL must be a valid http or https URL'), validate], asyncRoute(async (req, res) => {
+    const listing = await Listing.create({ ownerId: req.user._id, title: req.body.title, category: req.body.category, condition: req.body.condition, description: req.body.description, pickupArea: req.body.pickupArea, pickupAddress: req.body.pickupAddress, pickupTime: req.body.pickupTime, imageUrl: req.body.imageUrl || '' });
     ok(res, { listing: safeListing(listing, req, true) }, 'Listing created successfully', 201);
   }));
-  router.get('/listings/:id/image', asyncRoute(async (req, res) => {
-    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, message: 'Invalid listing ID' });
-    const listing = await Listing.findById(req.params.id).select('+imageData +imageContentType');
-    if (!listing?.imageData || !listing.imageContentType) return res.status(404).json({ success: false, message: 'Listing image not found' });
-    res.set('Cache-Control', 'public, max-age=3600'); res.type(listing.imageContentType).send(listing.imageData);
-  }));
   router.get('/listings/:id', authOptional(config.jwtSecret), [idRule, validate], asyncRoute(async (req, res) => {
-    const listing = await Listing.findById(req.params.id).select('-__v +imageContentType');
+    const listing = await Listing.findById(req.params.id).select('-__v');
     if (!listing) return res.status(404).json({ success: false, message: 'Listing not found' });
     const isOwner = req.user && listing.ownerId.equals(req.user._id);
     const hasAcceptedRequest = req.user && await ItemRequest.exists({ listingId: listing._id, requesterId: req.user._id, status: 'accepted' });
     ok(res, { listing: safeListing(listing, req, Boolean(isOwner || hasAcceptedRequest)) });
   }));
-  router.patch('/listings/:id', auth, [idRule, body('title').optional().trim().isLength({ min: 2, max: 120 }), body('category').optional().isIn(CATEGORIES), body('condition').optional().isIn(CONDITIONS), body('description').optional().trim().isLength({ min: 10, max: 2000 }), body('pickupArea').optional().trim().isLength({ min: 2, max: 120 }), body('pickupAddress').optional().trim().isLength({ min: 5, max: 300 }), body('pickupTime').optional().trim().isLength({ min: 3, max: 200 }), imageRule, body('status').not().exists().withMessage('Status cannot be changed here'), validate], asyncRoute(async (req, res) => {
+  router.patch('/listings/:id', auth, [idRule, body('title').optional().trim().isLength({ min: 2, max: 120 }), body('category').optional().isIn(CATEGORIES), body('condition').optional().isIn(CONDITIONS), body('description').optional().trim().isLength({ min: 10, max: 2000 }), body('pickupArea').optional().trim().isLength({ min: 2, max: 120 }), body('pickupAddress').optional().trim().isLength({ min: 5, max: 300 }), body('pickupTime').optional().trim().isLength({ min: 3, max: 200 }), body('imageUrl').optional({ values: 'falsy' }).isURL({ protocols: ['http', 'https'], require_protocol: true }).withMessage('Image URL must be a valid http or https URL'), body('status').not().exists().withMessage('Status cannot be changed here'), validate], asyncRoute(async (req, res) => {
     const listing = await ownListing(req, res); if (!listing) return;
     if (listing.status !== 'available') return res.status(409).json({ success: false, message: 'Only available listings can be edited' });
-    const fields = ['title', 'category', 'condition', 'description', 'pickupArea', 'pickupAddress', 'pickupTime'];
+    const fields = ['title', 'category', 'condition', 'description', 'pickupArea', 'pickupAddress', 'pickupTime', 'imageUrl'];
     for (const field of fields) if (req.body[field] !== undefined) listing[field] = req.body[field];
-    const image = imageBuffer(req.body.imageData); if (image) { listing.imageData = image.data; listing.imageContentType = image.contentType; }
     await listing.save(); ok(res, { listing: safeListing(listing, req, true) }, 'Listing updated successfully');
   }));
   router.delete('/listings/:id', auth, [idRule, validate], asyncRoute(async (req, res) => {
@@ -112,7 +92,7 @@ export function createApi(config) {
     ok(res, null, 'Listing deleted successfully');
   }));
   router.get('/me/listings', auth, asyncRoute(async (req, res) => {
-    const listings = await Listing.find({ ownerId: req.user._id }).select('+imageContentType').sort({ createdAt: -1 }).lean();
+    const listings = await Listing.find({ ownerId: req.user._id }).sort({ createdAt: -1 }).lean();
     ok(res, { listings: listings.map(item => safeListing(item, req, true)) });
   }));
 
@@ -126,7 +106,7 @@ export function createApi(config) {
     ok(res, { request }, 'Request sent successfully', 201);
   }));
   router.get('/me/requests', auth, asyncRoute(async (req, res) => {
-    const requests = await ItemRequest.find({ requesterId: req.user._id }).populate({ path: 'listingId', select: '+imageContentType' }).sort({ createdAt: -1 }).lean();
+    const requests = await ItemRequest.find({ requesterId: req.user._id }).populate('listingId').sort({ createdAt: -1 }).lean();
     ok(res, { requests: requests.map(item => ({ ...item, listingId: item.listingId ? safeListing(item.listingId, req, item.status === 'accepted') : null })) });
   }));
   router.get('/listings/:id/requests', auth, [idRule, validate], asyncRoute(async (req, res) => {

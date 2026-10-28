@@ -12,8 +12,6 @@ const schema = new mongoose.Schema({
   pickupAddress: { type: String, required: true, trim: true, minlength: 5, maxlength: 300 },
   pickupTime: { type: String, required: true, trim: true, minlength: 3, maxlength: 200 },
   imageUrl: { type: String, trim: true, default: '' },
-  imageData: { type: Buffer, default: undefined, select: false },
-  imageContentType: { type: String, enum: ['image/jpeg', 'image/png', 'image/webp'], select: false },
   status: { type: String, enum: ['available', 'reserved', 'collected'], default: 'available', index: true }
 }, { timestamps: true });
 schema.index({ category: 1, condition: 1, status: 1, createdAt: -1 });

@@ -89,12 +89,11 @@ test('public listing payload does not expose owner email or password hash',async
   const ownerView=await ownerAgent.get(`/api/listings/${listing._id}`).expect(200);
   assert.equal(ownerView.body.data.listing.pickupAddress,'123 Maple Street, Apt 4');
 });
-test('uploaded item photos are served by the API and pickup details are revealed only after acceptance',async()=>{
-  const image='data:image/png;base64,aGVsbG8=';
-  const created=await ownerAgent.post('/api/listings').send({title:'A photo item',category:'Books',condition:'Good',description:'A useful item with its picture.',pickupArea:'Northside',pickupAddress:'123 Maple Street, Apt 4',pickupTime:'Weekdays 5–7 PM',imageData:image}).expect(201);
+test('image URL validation and pickup details privacy through request acceptance',async()=>{
+  await ownerAgent.post('/api/listings').send({title:'Bad image',category:'Books',condition:'Good',description:'A useful item with a bad image URL.',pickupArea:'Northside',pickupAddress:'123 Maple Street, Apt 4',pickupTime:'Weekdays 5–7 PM',imageUrl:'not-a-url'}).expect(400);
+  const created=await ownerAgent.post('/api/listings').send({title:'A photo item',category:'Books',condition:'Good',description:'A useful item with its picture.',pickupArea:'Northside',pickupAddress:'123 Maple Street, Apt 4',pickupTime:'Weekdays 5–7 PM',imageUrl:'https://example.test/book.jpg'}).expect(201);
   const listing=created.body.data.listing;
-  assert.match(listing.imageUrl,/\/api\/listings\/.+\/image$/);
-  await request(app).get(`/api/listings/${listing._id}/image`).expect(200).expect('Content-Type',/image\/png/);
+  assert.equal(listing.imageUrl,'https://example.test/book.jpg');
   const pending=(await requesterAgent.post(`/api/listings/${listing._id}/requests`).send({message:'I would love this photo item.'}).expect(201)).body.data.request;
   assert.equal((await requesterAgent.get(`/api/listings/${listing._id}`).expect(200)).body.data.listing.pickupAddress,undefined);
   await ownerAgent.patch(`/api/requests/${pending._id}/status`).send({status:'accepted'}).expect(200);

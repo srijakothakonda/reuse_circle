@@ -18,8 +18,7 @@ export function createApp(config) {
     },
     credentials: true
   }));
-  // A 2 MB image is sent as a data URL, which expands to roughly 2.7 MB.
-  app.use(express.json({ limit: '3mb' }));
+  app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
   const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false, message: { success: false, message: 'Too many authentication attempts. Try again later.' } });
   app.use('/api/auth', authLimiter);
