@@ -1,0 +1,17 @@
+{
+  "name": "reusecircle",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["frontend", "backend"],
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:frontend": "npm --workspace frontend run dev",
+    "dev:backend": "npm --workspace backend run dev",
+    "build": "npm --workspace frontend run build",
+    "test": "npm --workspace backend test && npm --workspace frontend test",
+    "test:backend": "npm --workspace backend test",
+    "test:frontend": "npm --workspace frontend test",
+    "create-moderator": "npm --workspace backend run create-moderator"
+  },
+  "devDependencies": { "concurrently": "^9.1.2" }
+}
